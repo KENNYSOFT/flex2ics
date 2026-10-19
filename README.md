@@ -18,28 +18,20 @@ flex 서비스 이용약관(2026-09-21 시행)은 플렉스의 동의 없이 자
 
 ## 설정
 
-1. Settings > Secrets and variables > Actions 의 Secrets 에 세 값을 넣는다.
-   - `FLEX_EMAIL`, `FLEX_PASSWORD`: flex 로그인 정보. 실행할 때마다 새로 로그인하므로 세션이나 쿠키를 넣어 둘 필요가 없다.
-   - `FLEX_ICS_NAME`: 게시할 파일 이름(확장자 제외). 구독 주소가 이 이름으로 정해지므로 남이 짐작할 수 없는 값으로 둔다.
+1. Settings > Secrets and variables > Actions 의 Secrets 에 `FLEX_EMAIL`, `FLEX_PASSWORD` 를 넣는다. 실행할 때마다 새로 로그인하므로 세션이나 쿠키를 넣어 둘 필요가 없다.
 2. Settings > Pages 에서 Source 를 GitHub Actions 로 두고, Custom domain 에 `flex.kennysoft.kr` 를 넣는다. DNS 에는 `flex` 의 CNAME 을 `kennysoft.github.io` 로 둔다.
 3. Actions 의 "근무 캘린더 게시" 를 수동으로 실행해 게시되는지 확인한다.
-4. 구글 캘린더의 다른 캘린더 > URL로 추가 에 `https://flex.kennysoft.kr/<FLEX_ICS_NAME>.ics` 를 넣는다. 구독 캘린더를 다시 읽는 주기는 구글이 정하므로 반영이 하루 가까이 늦을 수 있다.
+4. 구글 캘린더의 다른 캘린더 > URL로 추가 에 `https://flex.kennysoft.kr/work.ics` 를 넣는다. 구독 캘린더를 다시 읽는 주기는 구글이 정하므로 반영이 하루 가까이 늦을 수 있다.
 5. 플렉스의 동의를 받으면 Settings > Secrets and variables > Actions 의 Variables 에 `SCHEDULE_ENABLED` 를 `true` 로 둔다. 그때부터 매일 KST 06:00 에 돈다.
 
-`FLEX_ICS_NAME` 은 이렇게 만들 수 있다.
+## 공개되는 것
 
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(24))"
-```
-
-## 공개 저장소에서 보이는 것
-
-Actions 로그에는 날짜 범위와 일정 건수만 찍힌다. 토큰, 비밀번호, 근무 내용은 찍지 않는다. 다만 Pages 로 올리는 파일은 실행마다 아티팩트로 하루 동안 남고, 공개 저장소의 아티팩트는 GitHub 에 로그인한 사람이면 누구나 받을 수 있다. 근무 일정을 남이 보지 않게 하려면 저장소를 비공개로 돌린다. 비공개 저장소에서 Pages 를 쓰려면 GitHub Pro 이상이 필요하다.
+구독 주소는 누구나 열 수 있다. Pages 로 올리는 파일은 실행마다 Actions 아티팩트로도 하루 동안 남고, 공개 저장소의 아티팩트는 GitHub 에 로그인한 사람이면 누구나 받을 수 있다. Actions 로그에는 날짜 범위와 일정 건수만 찍히고, 토큰과 비밀번호, 근무 내용은 찍지 않는다.
 
 ## 로컬에서 돌리기
 
 ```bash
-python -m flex2ics --out out/flex.ics
+python -m flex2ics --out out/work.ics
 ```
 
 `FLEX_EMAIL`, `FLEX_PASSWORD` 가 없으면 터미널에서 입력받고, 비밀번호는 화면에 보이지 않는다. 받는 기간은 `--past-days`, `--future-days` 로 바꾼다.

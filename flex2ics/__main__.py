@@ -1,6 +1,6 @@
 """flex 의 내 근무를 받아 ICS 파일 하나로 쓴다.
 
-    python -m flex2ics --out site/flex.ics
+    python -m flex2ics --out site/work.ics
 
 로그인 정보는 환경 변수 FLEX_EMAIL, FLEX_PASSWORD 로 받는다. 터미널에서 직접
 돌릴 때 둘 중 없는 것은 입력받고, 비밀번호는 화면에 보이지 않게 받는다.
