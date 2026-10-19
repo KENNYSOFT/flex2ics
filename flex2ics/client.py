@@ -107,6 +107,34 @@ class Session:
         )
         return {str(form["customerWorkFormId"]): form["display"]["name"] for form in data["workForms"]}
 
+    def time_off_names(self):
+        """휴가 정책 id 를 화면에 보이는 휴가 이름(연차, 리프레시 같은)으로 바꾸는 표를 준다.
+
+        연차는 연차 정책 목록에, 그 밖의 휴가는 휴가 종류 목록에 따로 있다. 지난 기록에
+        남은 휴가가 있으므로 지운 정책과 비활성 종류도 받는다.
+        """
+        names = {}
+        annual = _call(
+            "연차 정책 조회",
+            "GET",
+            "/api/v2/time-off/customers/%s/annual-time-off-policies" % self.customer_id,
+            self._headers,
+            query={"excludeDeleted": "false"},
+        )
+        for policy in annual["annualTimeOffPolicies"]:
+            names[str(policy["timeOffPolicyId"])] = (policy.get("displayInfo") or {}).get("name")
+        forms = _call(
+            "휴가 종류 조회",
+            "GET",
+            "/api/v2/time-off/customers/%s/time-off-forms" % self.customer_id,
+            self._headers,
+            query={"includeInactivatedTimeOffForms": "true"},
+        )
+        for item in forms["timeOffForms"]:
+            form = item["customerTimeOffForm"]
+            names[str(form["timeOffPolicyId"])] = (form.get("displayInfo") or {}).get("name")
+        return {policy: name for policy, name in names.items() if name}
+
     def work_schedules(self, start, end):
         """start 부터 end 까지(둘 다 포함) 날짜별 근무 일정을 준다."""
         data = _call(

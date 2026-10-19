@@ -2,14 +2,14 @@ import datetime as dt
 import unittest
 
 from flex2ics.schedule import build_events
-from tests.helpers import FORMS, at, block, day, rest, work
+from tests.helpers import FORMS, TIME_OFF_NAMES, at, block, day, rest, time_off, work
 
 D = "2026-10-19"
 
 
 class BuildEventsTest(unittest.TestCase):
     def build(self, *days):
-        events, skipped = build_events(list(days), FORMS)
+        events, skipped = build_events(list(days), FORMS, TIME_OFF_NAMES)
         return events, skipped
 
     def test_rest_goes_into_the_work_event_description(self):
@@ -99,7 +99,7 @@ class BuildEventsTest(unittest.TestCase):
         events, skipped = self.build(day("2026-10-18", day_offs=("WEEKLY_HOLIDAY",)))
 
         self.assertEqual(events, [])
-        self.assertEqual(skipped, 0)
+        self.assertEqual(skipped, {})
 
     def test_unknown_form_keeps_its_id_in_the_title(self):
         events, _ = self.build(day(D, work("9999", D, "10:00", "19:00")))
@@ -110,7 +110,7 @@ class BuildEventsTest(unittest.TestCase):
         events, skipped = self.build(day(D, work("1105", D, "10:00", "19:00"), block("SOMETHING", "1", D, "10:00", "11:00")))
 
         self.assertEqual(len(events), 1)
-        self.assertEqual(skipped, 1)
+        self.assertEqual(skipped, {"SOMETHING": 1})
 
     def test_all_day_block_becomes_an_all_day_event(self):
         events, _ = self.build(day(D, work("1104", D, "00:00", "00:00", all_day=True)))
@@ -123,6 +123,82 @@ class BuildEventsTest(unittest.TestCase):
         events, _ = self.build(day(D, work("1105", D, "10:00", "19:00")))
 
         self.assertFalse(events[0].all_day)
+
+
+class TimeOffTest(unittest.TestCase):
+    def build(self, *days):
+        events, _ = build_events(list(days), FORMS, TIME_OFF_NAMES)
+        return events
+
+    def test_full_day_time_off_without_times_becomes_an_all_day_event(self):
+        events = self.build(day("2026-03-10", time_off("ANNUAL_TIME_OFF", "199", "2026-03-10")))
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].summary, "연차")
+        self.assertTrue(events[0].all_day)
+        self.assertTrue(events[0].time_off)
+        self.assertEqual(events[0].start, dt.date(2026, 3, 10))
+        self.assertEqual(events[0].end, dt.date(2026, 3, 11))
+        self.assertEqual(events[0].uid, "2026-03-10-timeoff-199-0@flex2ics")
+
+    def test_half_day_time_off_sits_next_to_the_work_event(self):
+        events = self.build(
+            day(
+                D,
+                work("1105", D, "10:00", "15:00"),
+                rest(D, "12:00", "13:00"),
+                time_off("ANNUAL_TIME_OFF", "199", D, "15:00", "19:00"),
+            )
+        )
+
+        self.assertEqual([(e.summary, e.time_off) for e in events], [("근무", False), ("연차", True)])
+        self.assertEqual(events[0].description, "휴게 12:00-13:00")
+        self.assertEqual(events[1].start, at(D, "15:00"))
+        self.assertEqual(events[1].end, at(D, "19:00"))
+        self.assertFalse(events[1].all_day)
+
+    def test_morning_and_afternoon_halves_become_one_event(self):
+        events = self.build(
+            day(
+                D,
+                time_off("ANNUAL_TIME_OFF", "199", D, "15:00", "19:00"),
+                time_off("ANNUAL_TIME_OFF", "199", D, "10:00", "15:00"),
+            )
+        )
+
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].start, at(D, "10:00"))
+        self.assertEqual(events[0].end, at(D, "19:00"))
+
+    def test_each_day_of_a_long_time_off_is_its_own_event(self):
+        events = self.build(
+            day("2026-03-03", time_off("CUSTOM_TIME_OFF", "3188", "2026-03-03")),
+            day("2026-03-04", time_off("CUSTOM_TIME_OFF", "3188", "2026-03-04")),
+        )
+
+        self.assertEqual([e.summary for e in events], ["리프레시", "리프레시"])
+        self.assertEqual([e.start for e in events], [dt.date(2026, 3, 3), dt.date(2026, 3, 4)])
+
+    def test_unknown_policy_falls_back_by_time_off_type(self):
+        events = self.build(
+            day("2026-03-03", time_off("ANNUAL_TIME_OFF", "999", "2026-03-03")),
+            day("2026-03-04", time_off("CUSTOM_TIME_OFF", "998", "2026-03-04")),
+        )
+
+        self.assertEqual([e.summary for e in events], ["연차", "휴가"])
+
+    def test_unconfirmed_time_off_keeps_its_status_in_the_description(self):
+        events = self.build(
+            day(D, time_off("ANNUAL_TIME_OFF", "199", D, "15:00", "19:00", status="IN_PROGRESS", memo=" 병원 "))
+        )
+
+        self.assertEqual(events[0].description, "flex 상태: IN_PROGRESS\n병원")
+
+    def test_rest_on_a_day_without_work_is_dropped(self):
+        events = self.build(day(D, time_off("ANNUAL_TIME_OFF", "199", D), rest(D, "12:00", "13:00")))
+
+        self.assertEqual([e.summary for e in events], ["연차"])
+        self.assertEqual(events[0].description, "")
 
 
 if __name__ == "__main__":

@@ -9,12 +9,18 @@ flex 는 날짜마다 timeBlocks 를 준다. 근무 블록(type WORK)은 근무 
 가장 많이 겹치는 근무 일정의 설명에 시각만 적는다. 형태가 같은 근무 블록이
 맞닿아 있으면 한 일정으로 합친다.
 
+휴가는 type 이 ANNUAL_TIME_OFF(연차)나 CUSTOM_TIME_OFF(그 밖의 휴가)인 블록으로
+온다. 반차는 시각이 있고, 종일 휴가는 시각 없이 allDay 만 있다. 여러 날 휴가는
+날짜마다 블록이 따로 오므로 날짜마다 종일 일정을 하나씩 만든다. 같은 휴가가
+맞닿아 있으면(오전 반차와 오후 반차) 근무처럼 한 일정으로 합친다.
+
 앞으로의 날짜에는 flex 가 근무 규칙대로 넣어 둔 계획(eventStatus PLAN)이 오고,
 지난 날짜에는 실제 기록(RECORD)이 온다. 내 근무 화면이 둘 다 보여 주므로 둘 다
 일정으로 만든다. UID 를 날짜와 근무 형태로 만들어서, 계획이 기록으로 바뀌어도
 캘린더에서는 같은 일정이 고쳐진다.
 """
 
+import collections
 import dataclasses
 import datetime as dt
 
@@ -22,6 +28,10 @@ import datetime as dt
 # 한국은 일광 절약 시간이 없어 고정 오프셋으로 충분하고, Windows 에서 tzdata
 # 패키지 없이도 돈다.
 KST = dt.timezone(dt.timedelta(hours=9))
+
+# 휴가 블록의 status 중 이것만 확인했다. 다른 값이면 확정되지 않은 휴가일 수
+# 있어 그 값을 설명에 그대로 적는다.
+TIME_OFF_CONFIRMED = "APPROVAL_COMPLETED"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -33,6 +43,7 @@ class Event:
     start: dt.date
     end: dt.date
     description: str = ""
+    time_off: bool = False
 
     @property
     def all_day(self):
@@ -47,40 +58,73 @@ class _Block:
     end: dt.datetime
     all_day: bool
     memos: tuple
+    fallback: str
 
 
 def _moment(value):
     return dt.datetime.fromtimestamp(value["timestamp"] / 1000, KST)
 
 
+def _time_off(date, kind, value):
+    """휴가 블록을 읽는다. 종일 휴가는 시각이 없어 그날 0시부터 다음 날 0시로 둔다."""
+    if value.get("allDay") or "startTimestamp" not in value:
+        start = dt.datetime.combine(dt.date.fromisoformat(date), dt.time(0), KST)
+        end = start + dt.timedelta(days=1)
+        all_day = True
+    else:
+        start = _moment(value["startTimestamp"])
+        end = _moment(value["endTimestampExclusive"])
+        all_day = False
+    memos = []
+    status = value.get("status")
+    if status and status != TIME_OFF_CONFIRMED:
+        memos.append("flex 상태: %s" % status)
+    memo = (value.get("memo") or "").strip()
+    if memo:
+        memos.append(memo)
+    return _Block(
+        kind="TIME_OFF",
+        form_id=str(value.get("timeOffPolicyId")),
+        start=start,
+        end=end,
+        all_day=all_day,
+        memos=tuple(memos),
+        fallback="연차" if kind == "ANNUAL_TIME_OFF" else "휴가",
+    )
+
+
 def _blocks(day):
-    """하루의 근무와 휴게 블록을 읽는다. 그 밖의 종류는 세기만 하고 건너뛴다."""
+    """하루의 근무, 휴게, 휴가 블록을 읽는다. 그 밖의 종류는 종류별로 세고 건너뛴다."""
     blocks = []
-    skipped = 0
+    skipped = collections.Counter()
     for item in day.get("timeBlocks") or []:
         kind = item.get("type")
-        if kind not in ("WORK", "REST"):
-            skipped += 1
-            continue
-        value = item["value"]
-        memo = (value.get("memo") or "").strip()
-        blocks.append(
-            _Block(
-                kind=kind,
-                form_id=str(value.get("workFormId")),
-                start=_moment(value["startTimestamp"]),
-                end=_moment(value["endTimestampExclusive"]),
-                all_day=bool(value.get("allDay")),
-                memos=(memo,) if memo else (),
+        value = item.get("value") or {}
+        if kind in ("WORK", "REST"):
+            memo = (value.get("memo") or "").strip()
+            form_id = str(value.get("workFormId"))
+            blocks.append(
+                _Block(
+                    kind=kind,
+                    form_id=form_id,
+                    start=_moment(value["startTimestamp"]),
+                    end=_moment(value["endTimestampExclusive"]),
+                    all_day=bool(value.get("allDay")),
+                    memos=(memo,) if memo else (),
+                    fallback="근무 형태 %s" % form_id,
+                )
             )
-        )
+        elif kind and kind.endswith("_TIME_OFF"):
+            blocks.append(_time_off(day["date"], kind, value))
+        else:
+            skipped[kind] += 1
     return blocks, skipped
 
 
-def _merge(works):
-    """형태가 같고 맞닿거나 겹치는 근무 블록을 하나로 합친다."""
+def _merge(blocks):
+    """형태가 같고 맞닿거나 겹치는 블록을 하나로 합친다."""
     merged = []
-    for block in sorted(works, key=lambda b: (b.start, b.end)):
+    for block in sorted(blocks, key=lambda b: (b.start, b.end)):
         last = merged[-1] if merged else None
         if (
             last is not None
@@ -126,45 +170,57 @@ def _all_day_range(block):
     return start, end
 
 
-def _day_events(day, form_names):
-    blocks, skipped = _blocks(day)
-    works = _merge([b for b in blocks if b.kind == "WORK"])
-    if not works:
-        return [], skipped
-
-    rests = [[] for _ in works]
-    for rest in sorted((b for b in blocks if b.kind == "REST"), key=lambda b: b.start):
-        rests[_owner(rest, works)].append(rest)
-
+def _events(date, prefix, blocks, rests, names):
+    """합친 블록을 일정으로 만든다. 같은 날 같은 형태가 또 나오면 UID 끝 번호를 올린다."""
     events = []
     seen = {}
-    for work, own_rests in zip(works, rests):
+    for block, own_rests in zip(blocks, rests):
         lines = ["휴게 %s-%s" % (r.start.strftime("%H:%M"), r.end.strftime("%H:%M")) for r in own_rests]
-        lines.extend(work.memos)
-        nth = seen.get(work.form_id, 0)
-        seen[work.form_id] = nth + 1
-        if work.all_day:
-            start, end = _all_day_range(work)
+        lines.extend(block.memos)
+        nth = seen.get(block.form_id, 0)
+        seen[block.form_id] = nth + 1
+        if block.all_day:
+            start, end = _all_day_range(block)
         else:
-            start, end = work.start, work.end
+            start, end = block.start, block.end
         events.append(
             Event(
-                uid="%s-%s-%d@flex2ics" % (day["date"], work.form_id, nth),
-                summary=form_names.get(work.form_id) or "근무 형태 %s" % work.form_id,
+                uid="%s-%s%s-%d@flex2ics" % (date, prefix, block.form_id, nth),
+                summary=names.get(block.form_id) or block.fallback,
                 start=start,
                 end=end,
                 description="\n".join(lines),
+                time_off=block.kind == "TIME_OFF",
             )
         )
+    return events
+
+
+def _day_events(day, work_names, time_off_names):
+    blocks, skipped = _blocks(day)
+
+    works = _merge([b for b in blocks if b.kind == "WORK"])
+    rests = [[] for _ in works]
+    if works:
+        for rest in sorted((b for b in blocks if b.kind == "REST"), key=lambda b: b.start):
+            rests[_owner(rest, works)].append(rest)
+
+    time_offs = _merge([b for b in blocks if b.kind == "TIME_OFF"])
+
+    events = _events(day["date"], "", works, rests, work_names)
+    events.extend(_events(day["date"], "timeoff-", time_offs, [[] for _ in time_offs], time_off_names))
     return events, skipped
 
 
-def build_events(days, form_names):
-    """날짜별 일정 목록을 캘린더 일정으로 바꾼다. (일정 목록, 건너뛴 블록 수) 를 준다."""
+def build_events(days, work_names, time_off_names):
+    """날짜별 일정 목록을 캘린더 일정으로 바꾼다.
+
+    (일정 목록, 건너뛴 블록 수를 종류별로 센 Counter) 를 준다.
+    """
     events = []
-    skipped = 0
+    skipped = collections.Counter()
     for day in days:
-        day_events, day_skipped = _day_events(day, form_names)
+        day_events, day_skipped = _day_events(day, work_names, time_off_names)
         events.extend(day_events)
-        skipped += day_skipped
+        skipped.update(day_skipped)
     return events, skipped

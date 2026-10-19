@@ -113,16 +113,19 @@ def main(argv=None):
 
     email, password = credentials()
     session = client.login(email, password, device_id(email))
-    forms = session.work_forms()
+    work_names = session.work_forms()
+    time_off_names = session.time_off_names()
     days = collect(session, start, end)
-    events, skipped = schedule.build_events(days, forms)
+    events, skipped = schedule.build_events(days, work_names, time_off_names)
     if not events:
-        raise SystemExit("%s..%s 에 근무 일정이 하나도 없다. 빈 캘린더를 게시하지 않고 멈춘다." % (start, end))
+        raise SystemExit("%s..%s 에 일정이 하나도 없다. 빈 캘린더를 게시하지 않고 멈춘다." % (start, end))
 
     write(args.out, ics.render(events, CALENDAR_NAME, now))
-    print("%s..%s 근무 일정 %d건을 썼다." % (start, end, len(events)))
+    time_off = sum(1 for event in events if event.time_off)
+    print("%s..%s 일정 %d건(근무 %d건, 휴가 %d건)을 썼다." % (start, end, len(events), len(events) - time_off, time_off))
     if skipped:
-        print("모르는 종류의 블록 %d건은 건너뛰었다." % skipped)
+        counts = ", ".join("%s %d건" % (kind, n) for kind, n in sorted(skipped.items(), key=lambda item: str(item[0])))
+        print("모르는 종류의 블록을 건너뛰었다: %s" % counts)
 
 
 if __name__ == "__main__":
