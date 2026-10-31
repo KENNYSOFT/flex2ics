@@ -19,14 +19,15 @@ flex 서비스 이용약관(2026-09-21 시행)은 플렉스의 동의 없이 자
 ## 설정
 
 1. Settings > Secrets and variables > Actions 의 Secrets 에 `FLEX_EMAIL`, `FLEX_PASSWORD` 를 넣는다. 실행할 때마다 새로 로그인하므로 세션이나 쿠키를 넣어 둘 필요가 없다.
-2. Settings > Pages 에서 Source 를 GitHub Actions 로 두고 Custom domain 에 `opsvcal.kennysoft.kr` 를 넣은 뒤, DNS 에서 `opsvcal` 의 CNAME 을 `kennysoft.github.io` 로 둔다. 순서를 거꾸로 하면 Pages 에 도메인을 넣기 전까지 다른 GitHub 사용자가 그 주소를 자기 Pages 에 붙일 수 있다.
-3. Actions 의 "근무 캘린더 게시" 를 수동으로 실행해 게시되는지 확인한다.
-4. 구글 캘린더의 다른 캘린더 > URL로 추가 에 `https://opsvcal.kennysoft.kr/work.ics` 를 넣는다. 구독 캘린더를 다시 읽는 주기는 구글이 정하므로 반영이 하루 가까이 늦을 수 있다.
-5. 플렉스의 동의를 받으면 Settings > Secrets and variables > Actions 의 Variables 에 `SCHEDULE_ENABLED` 를 `true` 로 둔다. 그때부터 매일 KST 06:00 에 돈다.
+2. `main` 과 이력이 이어지지 않는 orphan 브랜치 `gh-pages` 를 만들어 `CNAME`(`opsvcal.kennysoft.kr` 한 줄)과 빈 `.nojekyll` 을 넣는다. `work.ics` 는 워크플로가 이 브랜치에 커밋한다.
+3. Settings > Pages 에서 Source 를 Deploy from a branch 로, 브랜치를 `gh-pages` 의 `/ (root)` 로 두고 Custom domain 에 `opsvcal.kennysoft.kr` 를 넣은 뒤, DNS 에서 `opsvcal` 의 CNAME 을 `kennysoft.github.io` 로 둔다. 순서를 거꾸로 하면 Pages 에 도메인을 넣기 전까지 다른 GitHub 사용자가 그 주소를 자기 Pages 에 붙일 수 있다.
+4. Actions 의 "근무 캘린더 게시" 를 수동으로 실행해 게시되는지 확인한다.
+5. 구글 캘린더의 다른 캘린더 > URL로 추가 에 `https://opsvcal.kennysoft.kr/work.ics` 를 넣는다. 구독 캘린더를 다시 읽는 주기는 구글이 정하므로 반영이 하루 가까이 늦을 수 있다.
+6. 플렉스의 동의를 받으면 Settings > Secrets and variables > Actions 의 Variables 에 `SCHEDULE_ENABLED` 를 `true` 로 둔다. 그때부터 매일 KST 06:00 에 돈다.
 
 ## 공개되는 것
 
-구독 주소는 누구나 열 수 있다. Pages 로 올리는 파일은 실행마다 Actions 아티팩트로도 하루 동안 남고, 공개 저장소의 아티팩트는 GitHub 에 로그인한 사람이면 누구나 받을 수 있다. Actions 로그에는 날짜 범위와 일정 건수만 찍히고, 토큰과 비밀번호, 근무 내용은 찍지 않는다.
+구독 주소는 누구나 열 수 있다. 일정이 바뀐 날마다 `gh-pages` 브랜치에 커밋이 쌓이므로, 지난 파일도 그 브랜치에서 누구나 볼 수 있다. Actions 로그에는 날짜 범위와 일정 건수만 찍히고, 토큰과 비밀번호, 근무 내용은 찍지 않는다.
 
 ## 로컬에서 돌리기
 

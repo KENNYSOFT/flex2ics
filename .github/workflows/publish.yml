@@ -7,9 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: pages
@@ -22,13 +20,17 @@ jobs:
     # SCHEDULE_ENABLED 를 true 로 둔다.
     if: github.event_name != 'schedule' || vars.SCHEDULE_ENABLED == 'true'
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
 
     steps:
       # 비밀번호를 다루는 워크플로라 외부 액션은 태그가 아니라 커밋으로 고정한다.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Pages 는 main 과 이력이 이어지지 않는 gh-pages 브랜치를 내보낸다. 그 브랜치를
+      # site 에 받아 work.ics 만 고치고, CNAME 과 .nojekyll 은 그대로 둔다.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: gh-pages
+          path: site
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -37,19 +39,23 @@ jobs:
       - name: 테스트
         run: python -m unittest discover -s tests -t .
 
-      # 여기서 실패하면 뒤의 게시 단계가 돌지 않아 이미 게시된 파일이 그대로 남는다.
+      # 여기서 실패하면 뒤의 커밋 단계가 돌지 않아 이미 게시된 파일이 그대로 남는다.
       - name: 근무 일정 받기
         env:
           FLEX_EMAIL: ${{ secrets.FLEX_EMAIL }}
           FLEX_PASSWORD: ${{ secrets.FLEX_PASSWORD }}
         run: python -m flex2ics --out site/work.ics
 
-      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
-        with:
-          path: site
-          retention-days: 1
-
-      - id: deploy
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      # DTSTAMP 는 파일을 만든 시각이라 실행마다 바뀐다. 그 줄만 바뀐 날은 커밋하지 않는다.
+      - name: 게시 브랜치에 커밋
+        working-directory: site
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add work.ics
+          if git diff --staged --quiet -I '^DTSTAMP:'; then
+            echo "바뀐 일정이 없어 커밋하지 않는다."
+            exit 0
+          fi
+          git commit -m "chore: $(TZ=Asia/Seoul date +%Y-%m-%d) 근무 일정 갱신"
+          git push
