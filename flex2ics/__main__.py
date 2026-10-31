@@ -5,7 +5,8 @@
 로그인 정보는 환경 변수 FLEX_EMAIL, FLEX_PASSWORD 로 받는다. 터미널에서 직접
 돌릴 때 둘 중 없는 것은 입력받고, 비밀번호는 화면에 보이지 않게 받는다.
 
-받는 범위는 한국 날짜로 오늘을 기준으로 앞뒤 며칠이다. 구독하는 캘린더는 파일에
+받는 범위는 한국 날짜로 오늘까지의 지난 며칠이다. 내일 이후는 받지 않으므로 미리
+등록한 휴가나 재택근무 계획은 그날이 되어야 들어간다. 구독하는 캘린더는 파일에
 없는 일정을 지우므로 이 범위를 지난 기록은 캘린더에서도 사라진다.
 
 어디서 실패하든 파일을 쓰지 않고 0 이 아닌 코드로 끝난다. 워크플로는 그 단계에서
@@ -103,13 +104,11 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="flex2ics", description="flex 의 내 근무를 ICS 파일로 쓴다.")
     parser.add_argument("--out", required=True, help="쓸 ICS 파일 경로")
     parser.add_argument("--past-days", type=int, default=365, help="오늘 전으로 받을 날 수 (기본 365)")
-    parser.add_argument("--future-days", type=int, default=90, help="오늘 뒤로 받을 날 수 (기본 90)")
     args = parser.parse_args(argv)
 
     now = dt.datetime.now(dt.timezone.utc)
-    today = now.astimezone(schedule.KST).date()
-    start = today - dt.timedelta(days=args.past_days)
-    end = today + dt.timedelta(days=args.future_days)
+    end = now.astimezone(schedule.KST).date()
+    start = end - dt.timedelta(days=args.past_days)
 
     email, password = credentials()
     session = client.login(email, password, device_id(email))
